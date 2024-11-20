@@ -32,6 +32,7 @@ def handle_client(connection):
     Handle a single client connection.
     """
     buffer = b""
+    set_dict = dict()
     while True:
         data = connection.recv(8000)
         if not data:
@@ -43,6 +44,7 @@ def handle_client(connection):
 
         commands = protocol_parser(buffer)
         buffer = b""  # Reset buffer after parsing
+        
 
         for command in commands:
             if len(command) > 0 and command[0] == b"PING":
@@ -51,6 +53,22 @@ def handle_client(connection):
                 message = command[1]
                 response = b"$" + str(len(message)).encode() + b"\r\n" + message + b"\r\n"
                 connection.send(response)
+            elif len(command) > 2 and command[0] == b"SET":
+                set_dict[command[1]] = command[2]
+                ok_message = b"OK"
+                response = b"$" + str(len(ok_message)).encode() + b"\r\n" + ok_message + b"\r\n"
+                connection.send(response)
+            elif len(command) > 1 and command[0] ==b"GET":
+                if command[1] in set_dict.keys():
+                    message = set_dict[command[1]]
+                    response = b"$" + str(len(message)).encode() + b"\r\n" + message + b"\r\n"
+                    connection.send(response)
+                else:
+                    response = b"$-1\r\n"
+                    connection.send(response)
+
+
+
 
 
 def main():
