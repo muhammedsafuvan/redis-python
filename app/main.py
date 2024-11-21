@@ -1,6 +1,10 @@
 import socket
 import threading  # noqa: F401
 import time
+import sys
+
+dir_path = b""
+db_filename = b""
 
 def protocol_parser(data):
     """
@@ -77,6 +81,13 @@ def handle_client(connection):
                 else:
                     response = b"$-1\r\n"
                     connection.send(response)
+            elif len(command) > 2 and command[0] == b"CONFIG" and command[1] == b"GET":
+                if command[2] == b"dir":
+                    response = b"*2\r\n$3\r\ndir\r\n$" + str(len(dir_path)).encode() + b"\r\n" + dir_path.encode() + b"\r\n"
+                    connection.send(response)
+                elif command[2] == b"dbfilename":
+                    response = b"*2\r\n$9\r\ndbfilename\r\n$" + str(len(db_filename)).encode() + b"\r\n" + db_filename.encode() + b"\r\n"
+                    connection.send(response)
 
 
 
@@ -86,7 +97,15 @@ def main():
     """
     Main server loop.
     """
+    global dir_path, db_filename
+
     print("Logs from your program will appear here!")
+    for i in range(1, len(sys.argv), 2):
+        if sys.argv[i] == '--dir':
+            dir_path = sys.argv[i + 1]
+        elif sys.argv[i] == '--dbfilename':
+            db_filename = sys.argv[i + 1]
+
 
     server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
     while True:
