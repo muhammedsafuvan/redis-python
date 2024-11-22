@@ -99,7 +99,8 @@ def handle_client(connection):
             elif len(command) > 1 and command[0] == b"KEYS":
                 if command[1] == b"*": 
                     rdb_content = get_rdb()
-                    if rdb_content:
+                    print(f"RDB CONTENT {rdb_content}")
+                    if rdb_content is not None:
                         key = parse_redis_file_format(rdb_content)[0]
                         response = "*1\r\n${}\r\n{}\r\n".format(len(key), key).encode()
                         connection.send(response)
