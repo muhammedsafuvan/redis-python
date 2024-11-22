@@ -78,7 +78,8 @@ def handle_client(connection):
                     del set_dict[command[1]]  
                     del expiry_dict[command[1]]
                 if rdb_content:
-                    value = parse_redis_file_format(rdb_content)[0][1]
+                    key_values = parse_redis_file_format(rdb_content)
+                    value = key_values.get(command[1].decode('utf-8'))
                     
                     response = b"$" + str(len(value)).encode() + b"\r\n" + value.encode() + b"\r\n"
                     connection.send(response)
@@ -103,10 +104,9 @@ def handle_client(connection):
                     print(f"RDB CONTENT {rdb_content}")
                     if rdb_content is not None:
                         # keys = multiple_keys(rdb_content)
-                        print(f"KEYS {parse_redis_file_format(rdb_content)}")
                         key_values = parse_redis_file_format(rdb_content)
                         print(f"KEY VALS {key_values}")
-                        res_list = [f"${len(key)}\r\n{key}\r\n" for key, val in key_values]
+                        res_list = [f"${len(key)}\r\n{key}\r\n" for key, val in key_values.items()]
                         print(f"RES LIST {res_list}")
                         response = f"*{len(key_values)}\r\n".encode() + "".join(res_list).encode()
 
@@ -122,10 +122,11 @@ def parse_redis_file_format(file_format: str):
     resizedb_index = splited_parts.index("xfb")
     key_index = resizedb_index + 4
     value_index = key_index + 1
-    key_values = []
+    key_values = dict()
     while value_index < len(splited_parts):
+        key_values[remove_bytes_characteres(splited_parts[key_index])] = remove_bytes_characteres(splited_parts[value_index])
         
-        key_values.append((remove_bytes_characteres(splited_parts[key_index]), remove_bytes_characteres(splited_parts[value_index])))
+        # key_values.append((remove_bytes_characteres(splited_parts[key_index]), remove_bytes_characteres(splited_parts[value_index])))
         if splited_parts[key_index+2].startswith("xff"):
             break
         key_index += 3
