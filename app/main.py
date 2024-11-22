@@ -1,3 +1,4 @@
+import os
 import socket
 import threading  # noqa: F401
 import time
@@ -52,6 +53,7 @@ def handle_client(connection):
         
 
         for command in commands:
+            print(f"COMMAND {command}")
             if len(command) > 0 and command[0] == b"PING":
                 connection.send(b"+PONG\r\n")
             elif len(command) > 1 and command[0] == b"ECHO":
@@ -89,6 +91,37 @@ def handle_client(connection):
                     response = b"*2\r\n$9\r\ndbfilename\r\n$" + str(len(db_filename)).encode() + b"\r\n" + db_filename.encode() + b"\r\n"
                     connection.send(response)
 
+            elif len(command) > 1 and command[0] == b"KEYS":
+                if command[1] == b"*":
+                    rdb_file_path = os.path.join(dir_path, db_filename)
+                    if os.path.exists(rdb_file_path):
+                        with open(rdb_file_path, "rb") as rdb_file:
+                            rdb_content = str(rdb_file.read())
+                            print(f"RDB {rdb_content}")
+                            if rdb_content:
+                                key = parse_redis_file_format(rdb_content)
+                                print(f"KEY {key}")
+                                response = "*1\r\n${}\r\n{}\r\n".format(len(key), key).encode()
+                                connection.send(response)
+                else:
+                    response = "*0\r\n".encode()
+                    connection.send(response)
+
+def parse_redis_file_format(file_format: str):
+    splited_parts = file_format.split("\\")
+    resizedb_index = splited_parts.index("xfb")
+    key_index = resizedb_index + 4
+    value_index = key_index + 1
+    key_bytes = splited_parts[key_index]
+    value_bytes = splited_parts[value_index]
+    key = remove_bytes_characteres(key_bytes)
+    return key
+
+def remove_bytes_characteres(string: str):
+    if string.startswith("x"):
+        return string[3:]
+    elif string.startswith("t"):
+        return string[1:]
 
 
 
