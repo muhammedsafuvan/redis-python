@@ -78,7 +78,8 @@ def handle_client(connection):
                     del set_dict[command[1]]  
                     del expiry_dict[command[1]]
                 if rdb_content:
-                    value = parse_redis_file_format(rdb_content)[1]
+                    value = parse_redis_file_format(rdb_content)[0][1]
+                    
                     response = b"$" + str(len(value)).encode() + b"\r\n" + value.encode() + b"\r\n"
                     connection.send(response)
                 elif command[1] in set_dict.keys():
@@ -101,8 +102,15 @@ def handle_client(connection):
                     rdb_content = get_rdb()
                     print(f"RDB CONTENT {rdb_content}")
                     if rdb_content is not None:
-                        key = parse_redis_file_format(rdb_content)[0]
-                        response = "*1\r\n${}\r\n{}\r\n".format(len(key), key).encode()
+                        # keys = multiple_keys(rdb_content)
+                        print(f"KEYS {parse_redis_file_format(rdb_content)}")
+                        key_values = parse_redis_file_format(rdb_content)
+                        print(f"KEY VALS {key_values}")
+                        res_list = [f"${len(key)}\r\n{key}\r\n" for key, val in key_values]
+                        print(f"RES LIST {res_list}")
+                        response = f"*{len(key_values)}\r\n".encode() + "".join(res_list).encode()
+
+                        print(f"RES {response}")
                         connection.send(response)
                 else:
                     response = "*0\r\n".encode()
@@ -110,14 +118,21 @@ def handle_client(connection):
 
 def parse_redis_file_format(file_format: str):
     splited_parts = file_format.split("\\")
+    print(f"SPLIT PARTS {splited_parts}")
     resizedb_index = splited_parts.index("xfb")
     key_index = resizedb_index + 4
     value_index = key_index + 1
-    key_bytes = splited_parts[key_index]
-    value_bytes = splited_parts[value_index]
-    key = remove_bytes_characteres(key_bytes)
-    value = remove_bytes_characteres(value_bytes)
-    return key, value
+    key_values = []
+    while value_index < len(splited_parts):
+        
+        key_values.append((remove_bytes_characteres(splited_parts[key_index]), remove_bytes_characteres(splited_parts[value_index])))
+        if splited_parts[key_index+2].startswith("xff"):
+            break
+        key_index += 3
+        value_index += 3
+
+    return key_values
+
 
 def get_rdb():
     rdb_file_path = os.path.join(dir_path, db_filename)
@@ -131,7 +146,8 @@ def remove_bytes_characteres(string: str):
         return string[3:]
     elif string.startswith("t"):
         return string[1:]
-
+    elif string.startswith("n") and len(string)>2:
+        return string[1:]
 
 
 
