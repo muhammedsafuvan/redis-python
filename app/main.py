@@ -72,11 +72,16 @@ def handle_client(connection):
 
                 connection.send(b"+OK\r\n")
             elif len(command) > 1 and command[0] ==b"GET":
-
+                rdb_content = get_rdb()
+                
                 if command[1] in expiry_dict and expiry_dict[command[1]] < time.time():
                     del set_dict[command[1]]  
                     del expiry_dict[command[1]]
-                if command[1] in set_dict.keys():
+                if rdb_content:
+                    value = parse_redis_file_format(rdb_content)[1]
+                    response = b"$" + str(len(value)).encode() + b"\r\n" + value.encode() + b"\r\n"
+                    connection.send(response)
+                elif command[1] in set_dict.keys():
                     message = set_dict[command[1]]
                     response = b"$" + str(len(message)).encode() + b"\r\n" + message + b"\r\n"
                     connection.send(response)
@@ -92,17 +97,12 @@ def handle_client(connection):
                     connection.send(response)
 
             elif len(command) > 1 and command[0] == b"KEYS":
-                if command[1] == b"*":
-                    rdb_file_path = os.path.join(dir_path, db_filename)
-                    if os.path.exists(rdb_file_path):
-                        with open(rdb_file_path, "rb") as rdb_file:
-                            rdb_content = str(rdb_file.read())
-                            print(f"RDB {rdb_content}")
-                            if rdb_content:
-                                key = parse_redis_file_format(rdb_content)
-                                print(f"KEY {key}")
-                                response = "*1\r\n${}\r\n{}\r\n".format(len(key), key).encode()
-                                connection.send(response)
+                if command[1] == b"*": 
+                    rdb_content = get_rdb()
+                    if rdb_content:
+                        key = parse_redis_file_format(rdb_content)[0]
+                        response = "*1\r\n${}\r\n{}\r\n".format(len(key), key).encode()
+                        connection.send(response)
                 else:
                     response = "*0\r\n".encode()
                     connection.send(response)
@@ -115,8 +115,16 @@ def parse_redis_file_format(file_format: str):
     key_bytes = splited_parts[key_index]
     value_bytes = splited_parts[value_index]
     key = remove_bytes_characteres(key_bytes)
-    return key
+    value = remove_bytes_characteres(value_bytes)
+    return key, value
 
+def get_rdb():
+    rdb_file_path = os.path.join(dir_path, db_filename)
+    if os.path.exists(rdb_file_path):
+        with open(rdb_file_path, "rb") as rdb_file:
+            rdb_content = str(rdb_file.read())
+            return rdb_content
+        
 def remove_bytes_characteres(string: str):
     if string.startswith("x"):
         return string[3:]
