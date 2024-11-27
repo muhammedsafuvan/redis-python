@@ -3,9 +3,23 @@ import socket
 import threading  # noqa: F401
 import time
 import sys
+from datetime import datetime
+from typing import BinaryIO
+import argparse
+from io import BytesIO
 
+parser = argparse.ArgumentParser(
+    prog="Bootleg Redis",
+    description="'Build your own Redis' Codecrafters challenge",
+)
+parser.add_argument("--dir")
+parser.add_argument("--dbfilename")
+parser.add_argument("--port", type=int, default=6379)
+parser.add_argument("--replicaof")
+args = parser.parse_args()
 dir_path = b""
 db_filename = b""
+key_values = dict()
 
 def protocol_parser(data):
     """
@@ -79,10 +93,20 @@ def handle_client(connection):
                     del expiry_dict[command[1]]
                 if rdb_content:
                     key_values = parse_redis_file_format(rdb_content)
-                    value = key_values.get(command[1].decode('utf-8'))
+                    print(f"KEY VALS {key_values}")
                     
-                    response = b"$" + str(len(value)).encode() + b"\r\n" + value.encode() + b"\r\n"
-                    connection.send(response)
+                    value = key_values.get(command[1].decode('utf-8')).get('value')
+                    expiry_time = key_values.get(command[1].decode('utf-8')).get('expiry_time')
+                    
+                    
+                    if time.time() > expiry_time/1000:
+                        key = command[1].decode('utf-8')  # Decode the key from the command
+                        if key in key_values:
+                            del key_values[key]  
+                        connection.send(response)
+                    else:
+                        response = b"$" + str(len(value)).encode() + b"\r\n" + value.encode() + b"\r\n"
+                        connection.send(response)
                 elif command[1] in set_dict.keys():
                     message = set_dict[command[1]]
                     response = b"$" + str(len(message)).encode() + b"\r\n" + message + b"\r\n"
@@ -116,30 +140,64 @@ def handle_client(connection):
                     response = "*0\r\n".encode()
                     connection.send(response)
 
-def parse_redis_file_format(file_format: str):
-    splited_parts = file_format.split("\\")
+def parse_redis_file_format(file_format):
+    splited_parts = str(file_format).split("\\")
     print(f"SPLIT PARTS {splited_parts}")
     resizedb_index = splited_parts.index("xfb")
-    key_index = resizedb_index + 4
-    value_index = key_index + 1
-    key_values = dict()
-    while value_index < len(splited_parts):
-        key_values[remove_bytes_characteres(splited_parts[key_index])] = remove_bytes_characteres(splited_parts[value_index])
-        
-        # key_values.append((remove_bytes_characteres(splited_parts[key_index]), remove_bytes_characteres(splited_parts[value_index])))
-        if splited_parts[key_index+2].startswith("xff"):
+    index = resizedb_index + 3
+    while index < len(splited_parts):
+        expiry = None
+        if splited_parts[index].startswith("xff"):
             break
-        key_index += 3
-        value_index += 3
+        if splited_parts[index] == "xfc":
+            f = BytesIO(file_format)  # Convert bytes to a file-like object
+            expiry, f = rdb_file_process_expiry(f, 8)
+            print(f"EXPIRY {expiry}")
+
+            index += 9
+
+        key = remove_bytes_characteres(splited_parts[index])
+        val = remove_bytes_characteres(splited_parts[index+1])
+        if key:
+            key_values[key] = {'value': val, 'expiry_time': expiry}
+        
+        
+        
+        index += 2
 
     return key_values
 
+def rdb_file_process_expiry(f: BinaryIO, bytes_to_read: int) -> tuple[float, BinaryIO]:
+    if bytes_to_read == 4:
+        expire_seconds = int.from_bytes(f.read(bytes_to_read), byteorder="little")
+        return (expire_seconds, f)
+    elif bytes_to_read == 8:
+        expire_ms = int.from_bytes(f.read(bytes_to_read), byteorder="little") / 1000
+        return (expire_ms, f)
+    else:
+        raise ValueError("Unable to process expiry time for key_value read from file!")
+
+def clean_hex(data):
+    cleaned_data = []
+    for item in data:
+        try:
+            # Remove 'x' prefix and convert to an integer (base 16)
+            cleaned_item = item.replace('x', '')  # Remove the 'x' prefix
+            cleaned_item = cleaned_item.strip('~')  # Remove the '~' character if it exists
+            
+            # Convert the cleaned hexadecimal string to an integer (base 16)
+            cleaned_data.append(int(cleaned_item, 16))
+
+        except ValueError:
+            # Skip invalid entries
+            continue
+    return cleaned_data
 
 def get_rdb():
     rdb_file_path = os.path.join(dir_path, db_filename)
     if os.path.exists(rdb_file_path):
         with open(rdb_file_path, "rb") as rdb_file:
-            rdb_content = str(rdb_file.read())
+            rdb_content = rdb_file.read()
             return rdb_content
         
 def remove_bytes_characteres(string: str):
@@ -149,7 +207,7 @@ def remove_bytes_characteres(string: str):
         return string[1:]
     elif string.startswith("n") and len(string)>2:
         return string[1:]
-
+    
 
 
 def main():
